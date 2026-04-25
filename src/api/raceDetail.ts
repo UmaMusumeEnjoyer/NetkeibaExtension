@@ -1,10 +1,12 @@
 import { load } from 'cheerio'
+import * as zlib from 'zlib'
 
 import { fetchHtml, toAbsoluteUrl, withRetry } from './http'
 import type { Horse, RaceResult } from './types'
 
 const RACE_RESULT_BASE_URL = 'https://race.netkeiba.com/race/result.html'
 const RACE_SHUTUBA_BASE_URL = 'https://race.netkeiba.com/race/shutuba.html'
+const RACE_SHUTUBA_ODDS_API_URL = 'https://race.netkeiba.com/api/api_get_jra_odds.html'
 const RACE_SITE_BASE = 'https://race.netkeiba.com/'
 
 function buildRaceResultUrl(raceId: string): string {
@@ -13,6 +15,69 @@ function buildRaceResultUrl(raceId: string): string {
 
 function buildRaceShutubaUrl(raceId: string): string {
   return `${RACE_SHUTUBA_BASE_URL}?race_id=${encodeURIComponent(raceId)}`
+}
+
+function buildRaceShutubaOddsApiUrl(raceId: string): string {
+  return `${RACE_SHUTUBA_ODDS_API_URL}?race_id=${encodeURIComponent(raceId)}`
+}
+
+type ShutubaOddsMap = Record<string, { odds?: string; popularity?: string }>
+
+async function fetchRealShutubaOdds(raceId: string): Promise<ShutubaOddsMap | null> {
+  try {
+    const apiUrl = buildRaceShutubaOddsApiUrl(raceId)
+    const jsonp = await withRetry(() => fetchHtml(apiUrl, 120), 1, 300)
+
+    const jsonpMatch = jsonp.trim().match(/^[^(]*\((\{[\s\S]*\})\)\s*;?$/)
+    if (!jsonpMatch?.[1]) {
+      throw new Error('Invalid JSONP format from shutuba odds API')
+    }
+
+    const jsonpObject = JSON.parse(jsonpMatch[1]) as { data?: string }
+    if (!jsonpObject.data) {
+      throw new Error('Missing data field in shutuba odds API response')
+    }
+
+    const compressedBuffer = Buffer.from(jsonpObject.data, 'base64')
+    const inflatedText = zlib.inflateSync(compressedBuffer).toString('utf-8')
+    const inflatedJson = JSON.parse(inflatedText) as {
+      odds?: Record<string, Record<string, [string?, string?, number?]>>
+    }
+
+    const winOdds = inflatedJson.odds?.['1']
+    if (!winOdds || typeof winOdds !== 'object') {
+      return null
+    }
+
+    const oddsMap: ShutubaOddsMap = {}
+    for (const [umaban, values] of Object.entries(winOdds)) {
+      if (!Array.isArray(values)) {
+        continue
+      }
+
+      const oddsValue = typeof values[0] === 'string' && values[0] ? values[0] : undefined
+      const popularityValue =
+        typeof values[2] === 'number' && Number.isFinite(values[2]) ? String(values[2]) : undefined
+
+      if (!oddsValue && !popularityValue) {
+        continue
+      }
+
+      oddsMap[umaban] = {
+        odds: oddsValue,
+        popularity: popularityValue,
+      }
+    }
+
+    return Object.keys(oddsMap).length > 0 ? oddsMap : null
+  } catch (error) {
+    console.warn(
+      `[crawl] failed to fetch/parse shutuba odds API for race ${raceId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
+    return null
+  }
 }
 
 function extractHorseId(link: string): string | null {
@@ -324,10 +389,33 @@ export async function fetchRaceHorses(raceId: string): Promise<RaceResult> {
   const shutubaRaceNumber = normalizeText(shutuba$('.RaceNum').first().text()) || undefined
   const shutubaRows = getHorseRows(shutuba$, 'shutuba')
   const shutubaHorses = parseHorseRows(shutuba$, shutubaRows, raceId, 'shutuba')
+  const realShutubaOdds = await fetchRealShutubaOdds(raceId)
+  const mergedShutubaHorses = shutubaHorses.map((horse) => {
+    if (!realShutubaOdds) {
+      return horse
+    }
+
+    const horseNumberInt = Number.parseInt(horse.horseNumber ?? '', 10)
+    if (Number.isNaN(horseNumberInt)) {
+      return horse
+    }
+
+    const umabanKey = String(horseNumberInt).padStart(2, '0')
+    const realOdds = realShutubaOdds[umabanKey]
+    if (!realOdds) {
+      return horse
+    }
+
+    return {
+      ...horse,
+      odds: realOdds.odds ?? horse.odds,
+      popularity: realOdds.popularity ?? horse.popularity,
+    }
+  })
   const shutubaInfo = parseRaceInfo(shutuba$, 'shutuba')
 
-  const useShutuba = shutubaHorses.length > resultHorses.length
-  const horses = useShutuba ? shutubaHorses : resultHorses
+  const useShutuba = mergedShutubaHorses.length > resultHorses.length
+  const horses = useShutuba ? mergedShutubaHorses : resultHorses
   const raceName = useShutuba ? shutubaRaceName : resultRaceName
   const raceNumber = useShutuba ? shutubaRaceNumber : resultRaceNumber
   const raceInfo = useShutuba ? shutubaInfo : resultInfo
