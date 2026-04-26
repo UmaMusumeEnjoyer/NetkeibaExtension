@@ -18,8 +18,14 @@ function buildHorsePedUrl(horseId: string): string {
 }
 
 function extractHorseIdFromUrl(url: string): string | undefined {
-  const match = url.match(/\/horse\/([0-9a-zA-Z]+)/)
-  return match?.[1]
+  const match = url.match(/\/horse\/([0-9a-zA-Z]+)/);
+  if (match) {
+    const id = match[1];
+    if (!['ped', 'sire', 'mare', 'result', 'board'].includes(id)) {
+      return id;
+    }
+  }
+  return undefined;
 }
 
 function normalizeText(value: string): string {
@@ -105,41 +111,93 @@ function parseRaceHistory($: ReturnType<typeof load>): RaceHistoryRecord[] {
     .filter((row) => Boolean(row.date || row.raceName || row.finishPosition))
 }
 
-function parsePedigree($: ReturnType<typeof load>): PedigreeNode[] {
-  const nodes: PedigreeNode[] = []
-  const seenLinks = new Set<string>()
+function parsePedigree($: ReturnType<typeof load>, horseId: string, horseName?: string): PedigreeNode[] {
+  const tableRows = $('.blood_table tr')
+  if (tableRows.length === 0) return []
 
-  const pedigreeLinks = $('.horse_pedigree_box a').length > 0 ? $('.horse_pedigree_box a') : $('.blood_table a')
+  // Khởi tạo ma trận ảo 32 dòng x 5 cột để chứa tọa độ thực tế của bảng
+  const matrix: (PedigreeNode | null)[][] = Array.from({ length: 32 }, () => Array(5).fill(null))
 
-  pedigreeLinks.each((_, anchor) => {
-    const horseName = normalizeText($(anchor).text())
-    const href = $(anchor).attr('href')
+  tableRows.each((rowIndex, tr) => {
+    // Netkeiba mặc định bảng có 5 thế hệ (32 dòng), ta chỉ xét trong phạm vi này
+    if (rowIndex >= 32) return 
 
-    if (!horseName || !href) {
-      return
-    }
+    let colIndex = 0
+    $(tr).find('td').each((_, td) => {
+      // Tìm vị trí cột trống đầu tiên trên dòng hiện tại trong ma trận
+      while (colIndex < 5 && matrix[rowIndex][colIndex] !== null) {
+        colIndex++
+      }
+      
+      if (colIndex >= 5) return // Vượt quá 5 cột thì bỏ qua
 
-    const link = toAbsoluteUrl(HORSE_DB_BASE, href)
-    const pathname = new URL(link).pathname
+      // Bóc tách thông tin ngựa (Lọc bỏ các thẻ a [血統] hay [産駒])
+      let node: PedigreeNode = { horseName: 'Unknown' }
+      const anchor = $(td).find('a').filter((__, a) => {
+        const href = $(a).attr('href') || ''
+        return Boolean(extractHorseIdFromUrl(href))
+      }).first()
 
-    // Keep only direct horse profile links in pedigree tree.
-    if (!/^\/horse\/[0-9a-zA-Z]+\/?$/.test(pathname)) {
-      return
-    }
+      if (anchor.length) {
+        const name = normalizeText(anchor.text())
+        const href = anchor.attr('href')
+        if (!href) {
+          return
+        }
+        const link = toAbsoluteUrl(HORSE_DB_BASE, href)
+        node = {
+          horseName: name,
+          link,
+          horseId: extractHorseIdFromUrl(link)
+        }
+      } else {
+        const clone = $(td).clone()
+        clone.find('a').remove()
+        const text = normalizeText(clone.text())
+        if (text) {
+          node = { horseName: text }
+        }
+      }
 
-    if (seenLinks.has(link)) {
-      return
-    }
-    seenLinks.add(link)
-
-    nodes.push({
-      horseName,
-      link,
-      horseId: extractHorseIdFromUrl(link),
+      // Đọc thuộc tính rowspan để "chiếm chỗ" các dòng bị gộp trong ma trận ảo
+      const rowspan = parseInt($(td).attr('rowspan') || '1', 10)
+      for (let r = 0; r < rowspan; r++) {
+        if (rowIndex + r < 32) {
+          // Lưu node thực ở ô đầu tiên, các ô bị gộp bên dưới đánh dấu là 'Spanned'
+          matrix[rowIndex + r][colIndex] = (r === 0) ? node : { horseName: 'Spanned' }
+        }
+      }
     })
   })
 
-  return nodes
+  // Định nghĩa node cho ngựa hiện tại
+  const selfNode: PedigreeNode = {
+    horseName: horseName || 'Unknown',
+    link: buildHorseUrl(horseId),
+    horseId,
+  }
+
+  // Trích xuất chính xác tọa độ của 14 tổ tiên (3 thế hệ đầu tiên)
+  // Tọa độ này bất biến nhờ cấu trúc rowspan chuẩn của Netkeiba
+  const ancestors = [
+    // Thế hệ 1 (UI Level 2): Cha, Mẹ (Cột 0, khoảng cách 16 dòng)
+    matrix[0][0], matrix[16][0],
+    
+    // Thế hệ 2 (UI Level 3): Ông bà nội, ngoại (Cột 1, khoảng cách 8 dòng)
+    matrix[0][1], matrix[8][1], matrix[16][1], matrix[24][1],
+    
+    // Thế hệ 3 (UI Level 4): Cụ (Cột 2, khoảng cách 4 dòng)
+    matrix[0][2], matrix[4][2], matrix[8][2], matrix[12][2],
+    matrix[16][2], matrix[20][2], matrix[24][2], matrix[28][2]
+  ]
+
+  // Đảm bảo không map nhầm ô bị spanned và rớt dữ liệu
+  const safeAncestors = ancestors.map(n => 
+    (n && n.horseName !== 'Spanned') ? n : { horseName: 'Unknown' }
+  )
+
+  // Trả về mảng 15 phần tử chuẩn xác 100% cho UI buildPedigreeLevels([1, 2, 4, 8])
+  return [selfNode, ...safeAncestors]
 }
 
 function parseProfile($: ReturnType<typeof load>): Record<string, string> {
@@ -194,7 +252,8 @@ export async function fetchHorseDetails(horseId: string): Promise<HorseDetails> 
     undefined
 
   const raceHistory = parseRaceHistory(result$)
-  const pedigree = parsePedigree(ped$)
+  // Gọi hàm parsePedigree và truyền thêm tham số
+  const pedigree = parsePedigree(ped$, horseId, horseName)
   const profile = parseProfile(main$)
 
   if (raceHistory.length === 0 && pedigree.length === 0 && Object.keys(profile).length === 0) {
