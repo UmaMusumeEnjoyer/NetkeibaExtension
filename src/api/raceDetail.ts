@@ -1,12 +1,11 @@
 import { load } from 'cheerio'
-import * as zlib from 'zlib'
+//import * as zlib from 'zlib'
 
 import { fetchHtml, toAbsoluteUrl, withRetry } from './http'
 import type { Horse, RaceResult } from './types'
 
 const RACE_RESULT_BASE_URL = 'https://race.netkeiba.com/race/result.html'
 const RACE_SHUTUBA_BASE_URL = 'https://race.netkeiba.com/race/shutuba.html'
-const RACE_SHUTUBA_ODDS_API_URL = 'https://race.netkeiba.com/api/api_get_jra_odds.html'
 const RACE_SITE_BASE = 'https://race.netkeiba.com/'
 
 function buildRaceResultUrl(raceId: string): string {
@@ -15,69 +14,6 @@ function buildRaceResultUrl(raceId: string): string {
 
 function buildRaceShutubaUrl(raceId: string): string {
   return `${RACE_SHUTUBA_BASE_URL}?race_id=${encodeURIComponent(raceId)}`
-}
-
-function buildRaceShutubaOddsApiUrl(raceId: string): string {
-  return `${RACE_SHUTUBA_ODDS_API_URL}?race_id=${encodeURIComponent(raceId)}`
-}
-
-type ShutubaOddsMap = Record<string, { odds?: string; popularity?: string }>
-
-async function fetchRealShutubaOdds(raceId: string): Promise<ShutubaOddsMap | null> {
-  try {
-    const apiUrl = buildRaceShutubaOddsApiUrl(raceId)
-    const jsonp = await withRetry(() => fetchHtml(apiUrl, 120), 1, 300)
-
-    const jsonpMatch = jsonp.trim().match(/^[^(]*\((\{[\s\S]*\})\)\s*;?$/)
-    if (!jsonpMatch?.[1]) {
-      throw new Error('Invalid JSONP format from shutuba odds API')
-    }
-
-    const jsonpObject = JSON.parse(jsonpMatch[1]) as { data?: string }
-    if (!jsonpObject.data) {
-      throw new Error('Missing data field in shutuba odds API response')
-    }
-
-    const compressedBuffer = Buffer.from(jsonpObject.data, 'base64')
-    const inflatedText = zlib.inflateSync(compressedBuffer).toString('utf-8')
-    const inflatedJson = JSON.parse(inflatedText) as {
-      odds?: Record<string, Record<string, [string?, string?, number?]>>
-    }
-
-    const winOdds = inflatedJson.odds?.['1']
-    if (!winOdds || typeof winOdds !== 'object') {
-      return null
-    }
-
-    const oddsMap: ShutubaOddsMap = {}
-    for (const [umaban, values] of Object.entries(winOdds)) {
-      if (!Array.isArray(values)) {
-        continue
-      }
-
-      const oddsValue = typeof values[0] === 'string' && values[0] ? values[0] : undefined
-      const popularityValue =
-        typeof values[2] === 'number' && Number.isFinite(values[2]) ? String(values[2]) : undefined
-
-      if (!oddsValue && !popularityValue) {
-        continue
-      }
-
-      oddsMap[umaban] = {
-        odds: oddsValue,
-        popularity: popularityValue,
-      }
-    }
-
-    return Object.keys(oddsMap).length > 0 ? oddsMap : null
-  } catch (error) {
-    console.warn(
-      `[crawl] failed to fetch/parse shutuba odds API for race ${raceId}: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    )
-    return null
-  }
 }
 
 function extractHorseId(link: string): string | null {
@@ -147,6 +83,96 @@ function findCellTextByClass(cells: Array<{ text?: string; className: string }>,
   return findCellByClass(cells, classPattern)?.text
 }
 
+function parseShutubaOddsAndPopularity(
+  $: ReturnType<typeof load>,
+  row: any,
+  cells: string[],
+  cellsWithClass: Array<{ text?: string; className: string }>,
+): { odds?: string; popularity?: string } {
+  const oddsById = normalizeText($(row).find('span[id^="odds-"]').first().text()) || undefined
+  const popularityById = normalizeText($(row).find('span[id^="ninki-"]').first().text()) || undefined
+
+  const oddsBySpanClass = normalizeText($(row).find('span.Odds').first().text()) || undefined
+  const popularityBySpanClass = normalizeText($(row).find('span.Popular_Ninki').first().text()) || undefined
+
+  const oddsNinkiSpans = $(row)
+    .find('span.Odds_Ninki')
+    .map((_, span) => normalizeText($(span).text()))
+    .get()
+    .filter((value) => Boolean(value))
+
+  const odds =
+    oddsById ||
+    oddsBySpanClass ||
+    oddsNinkiSpans[0] ||
+    findCellTextByClass(cellsWithClass, /Txt_R\s+Popular|\bOdds\b/i) ||
+    getCellText(cells, 9)
+
+  const popularity =
+    popularityById ||
+    popularityBySpanClass ||
+    oddsNinkiSpans[1] ||
+    findCellTextByClass(cellsWithClass, /\bPopular_Ninki\b/i) ||
+    getCellText(cells, 10)
+
+  return {
+    odds,
+    popularity,
+  }
+}
+
+function hasFinishedResultData(horses: Horse[]): boolean {
+  if (horses.length === 0) {
+    return false
+  }
+
+  const completedCount = horses.filter((horse) => {
+    const finishPosition = (horse.finishPosition ?? '').trim()
+    const goalTime = (horse.goalTime ?? '').trim()
+    return Boolean(finishPosition) && finishPosition !== '-' && Boolean(goalTime)
+  }).length
+
+  const minimumCompletedRows = Math.max(2, Math.floor(horses.length / 2))
+  return completedCount >= minimumCompletedRows
+}
+
+function isMeaningfulShutubaValue(value: string | undefined): boolean {
+  if (!value) {
+    return false
+  }
+
+  const normalized = value.trim()
+  if (!normalized) {
+    return false
+  }
+
+  return !['-', '--', '---', '---.-', '**'].includes(normalized)
+}
+
+function mergeShutubaOdds(baseHorses: Horse[], shutubaHorses: Horse[]): Horse[] {
+  if (baseHorses.length === 0 || shutubaHorses.length === 0) {
+    return baseHorses
+  }
+
+  const shutubaByHorseId = new Map(shutubaHorses.map((horse) => [horse.horseId, horse]))
+
+  return baseHorses.map((horse) => {
+    const shutuba = shutubaByHorseId.get(horse.horseId)
+    if (!shutuba) {
+      return horse
+    }
+
+    const mergedOdds = isMeaningfulShutubaValue(shutuba.odds) ? shutuba.odds : horse.odds
+    const mergedPopularity = isMeaningfulShutubaValue(shutuba.popularity) ? shutuba.popularity : horse.popularity
+
+    return {
+      ...horse,
+      odds: mergedOdds,
+      popularity: mergedPopularity,
+    }
+  })
+}
+
 function parseRaceInfo($: ReturnType<typeof load>, sourcePage: 'result' | 'shutuba'): RaceResult['raceInfo'] {
   const raceData01 = normalizeText($('.RaceData01').first().text()) || undefined
   const raceData02 = normalizeText($('.RaceData02').first().text()) || undefined
@@ -174,12 +200,7 @@ function parseRaceInfo($: ReturnType<typeof load>, sourcePage: 'result' | 'shutu
 
 function getHorseRows($: ReturnType<typeof load>, mode: 'result' | 'shutuba') {
   if (mode === 'result') {
-    const resultRows = $('.ResultTableWrap tbody tr.HorseList')
-    if (resultRows.length > 0) {
-      return resultRows
-    }
-
-    return $('.RaceTable01.RaceCommon_Table tbody tr.HorseList')
+    return $('.ResultTableWrap tbody tr.HorseList')
   }
 
   const shutubaRows = $('.Shutuba_Table tbody tr.HorseList')
@@ -277,10 +298,9 @@ function parseHorseRows(
 
     if (mode === 'result') {
       const timeCells = cellsWithClass.filter((cell) => /\bTime\b/i.test(cell.className) && cell.text)
-      const popularity =
-        findCellTextByClass(cellsWithClass, /\bOdds\b[^]*\bTxt_C\b/i) ||
-        getCellText(cells, 9)
-      const odds = findCellTextByClass(cellsWithClass, /\bOdds\s+Txt_R\b/i) || getCellText(cells, 10)
+      const resultOddsCells = $(row).find('td.Odds')
+      const popularity = normalizeText(resultOddsCells.first().text()) || getCellText(cells, 7)
+      const odds = normalizeText(resultOddsCells.eq(1).text()) || getCellText(cells, 8)
 
       horses.push({
         raceId,
@@ -313,12 +333,7 @@ function parseHorseRows(
       return
     }
 
-    const popularity =
-      findCellTextByClass(cellsWithClass, /\bPopular_Ninki\b/i) ||
-      getCellText(cells, 10)
-    const odds =
-      findCellTextByClass(cellsWithClass, /Txt_R\s+Popular|\bOdds\b/i) ||
-      getCellText(cells, 9)
+    const { odds, popularity } = parseShutubaOddsAndPopularity($, row, cells, cellsWithClass)
 
     horses.push({
       raceId,
@@ -351,6 +366,53 @@ function parseHorseRows(
   return horses
 }
 
+// Bắn API với TTL = 0 để ép lấy data tươi nhất, không dùng cache
+async function fetchRealShutubaOdds(raceId: string): Promise<any | null> {
+  try {
+    const url = `https://race.netkeiba.com/api/api_get_jra_odds.html?pid=api_get_jra_odds&input=UTF-8&output=jsonp&race_id=${raceId}&type=1&action=init&sort=odds&compress=1`
+    const text = await withRetry(() => fetchHtml(url, 0))
+
+    const firstBrace = text.indexOf('{')
+    const lastBrace = text.lastIndexOf('}')
+    if (firstBrace === -1 || lastBrace === -1) {
+      return null
+    }
+
+    const jsonStr = text.substring(firstBrace, lastBrace + 1)
+    const jsonObj = JSON.parse(jsonStr)
+
+    if (!jsonObj.data) {
+      return jsonObj
+    }
+
+    // --- BẮT ĐẦU PHẦN SỬA ĐỔI DÀNH CHO TRÌNH DUYỆT ---
+    
+    // 1. Chuyển chuỗi Base64 thành Mảng Byte (Uint8Array) bằng atob()
+    const binaryString = atob(jsonObj.data)
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+
+    // 2. Giải nén Zlib bằng API DecompressionStream của trình duyệt
+    // 'deflate' trong DecompressionStream chuẩn web chính là định dạng zlib
+    const decompressionStream = new DecompressionStream('deflate')
+    
+    // Tạo một Response từ byte array, đẩy nó qua luồng giải nén
+    const decompressedStream = new Response(bytes).body!.pipeThrough(decompressionStream)
+    
+    // Đọc kết quả giải nén thành chuỗi Text (UTF-8)
+    const decompressedText = await new Response(decompressedStream).text()
+
+    // --- KẾT THÚC PHẦN SỬA ĐỔI ---
+
+    return JSON.parse(decompressedText)
+  } catch (err) {
+    console.warn(`[crawl] Failed to fetch/decode real odds for race ${raceId}:`, err)
+    return null
+  }
+}
+
 export async function fetchRaceHorses(raceId: string): Promise<RaceResult> {
   const resultUrl = buildRaceResultUrl(raceId)
   const resultHtml = await withRetry(() => fetchHtml(resultUrl, 140))
@@ -365,64 +427,75 @@ export async function fetchRaceHorses(raceId: string): Promise<RaceResult> {
   const resultHorses = parseHorseRows(result$, resultRows, raceId, 'result')
   const resultInfo = parseRaceInfo(result$, 'result')
 
-  const shouldTryShutuba = resultHorses.length < 2
+  let shutubaRaceName: string | undefined
+  let shutubaRaceNumber: string | undefined
+  let shutubaInfo: RaceResult['raceInfo'] | undefined
+  let shutubaRowsLength = 0
+  let shutubaHorses: Horse[] = []
 
-  if (!shouldTryShutuba) {
-    const raceResult: RaceResult = {
-      raceId,
-      raceName: resultRaceName,
-      raceNumber: resultRaceNumber,
-      raceInfo: resultInfo,
-      horses: resultHorses,
+  try {
+    const shutubaUrl = buildRaceShutubaUrl(raceId)
+    const shutubaHtml = await withRetry(() => fetchHtml(shutubaUrl, 160))
+    const shutuba$ = load(shutubaHtml)
+
+    shutubaRaceName =
+      normalizeText(shutuba$('.RaceName').first().text()) ||
+      normalizeText(shutuba$('title').first().text()) ||
+      undefined
+    shutubaRaceNumber = normalizeText(shutuba$('.RaceNum').first().text()) || undefined
+    const shutubaRows = getHorseRows(shutuba$, 'shutuba')
+    shutubaRowsLength = shutubaRows.length
+    shutubaHorses = parseHorseRows(shutuba$, shutubaRows, raceId, 'shutuba')
+    shutubaInfo = parseRaceInfo(shutuba$, 'shutuba')
+
+    // Lấy Tỷ lệ cược (Odds) thật từ API ngầm
+const realOddsData = await fetchRealShutubaOdds(raceId)
+    if (realOddsData) {
+      const oddsBlock = realOddsData.odds ? realOddsData.odds : realOddsData
+      const winOdds = oddsBlock['1'] // '1' là loại cược Win (thắng)
+
+      if (winOdds) {
+        for (const horse of shutubaHorses) {
+          if (horse.horseNumber) {
+            const rawNumStr = horse.horseNumber.toString().trim()
+            const paddedNum = rawNumStr.padStart(2, '0')
+            
+            // Tìm kiếm dữ liệu: Ưu tiên key gốc (vd: "1"), nếu không có mới tìm key có số 0 (vd: "01")
+            const horseOddsData = winOdds[rawNumStr] || winOdds[paddedNum]
+            
+            if (horseOddsData) {
+              if (horseOddsData[0] !== undefined) {
+                horse.odds = String(horseOddsData[0])
+              }
+              if (horseOddsData[2] !== undefined) {
+                horse.popularity = String(horseOddsData[2])
+              }
+            } else {
+               // Bật log này lên nếu FE vẫn lỗi để xem server Netkeiba đang trả về key tên là gì
+               // console.log(`[Debug] API không chứa data cho ngựa số ${rawNumStr} trong mảng winOdds`, winOdds)
+            }
+          }
+        }
+      }
     }
-    return raceResult
+
+  } catch (error) {
+    console.warn(
+      `[crawl] failed to crawl shutuba for race ${raceId}: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 
-  const shutubaUrl = buildRaceShutubaUrl(raceId)
-  const shutubaHtml = await withRetry(() => fetchHtml(shutubaUrl, 160))
-  const shutuba$ = load(shutubaHtml)
-
-  const shutubaRaceName =
-    normalizeText(shutuba$('.RaceName').first().text()) ||
-    normalizeText(shutuba$('title').first().text()) ||
-    undefined
-  const shutubaRaceNumber = normalizeText(shutuba$('.RaceNum').first().text()) || undefined
-  const shutubaRows = getHorseRows(shutuba$, 'shutuba')
-  const shutubaHorses = parseHorseRows(shutuba$, shutubaRows, raceId, 'shutuba')
-  const realShutubaOdds = await fetchRealShutubaOdds(raceId)
-  const mergedShutubaHorses = shutubaHorses.map((horse) => {
-    if (!realShutubaOdds) {
-      return horse
-    }
-
-    const horseNumberInt = Number.parseInt(horse.horseNumber ?? '', 10)
-    if (Number.isNaN(horseNumberInt)) {
-      return horse
-    }
-
-    const umabanKey = String(horseNumberInt).padStart(2, '0')
-    const realOdds = realShutubaOdds[umabanKey]
-    if (!realOdds) {
-      return horse
-    }
-
-    return {
-      ...horse,
-      odds: realOdds.odds ?? horse.odds,
-      popularity: realOdds.popularity ?? horse.popularity,
-    }
-  })
-  const shutubaInfo = parseRaceInfo(shutuba$, 'shutuba')
-
-  const useShutuba = mergedShutubaHorses.length > resultHorses.length
-  const horses = useShutuba ? mergedShutubaHorses : resultHorses
+  const isFinishedRace = hasFinishedResultData(resultHorses)
+  const useShutuba = shutubaHorses.length > 0 && (!isFinishedRace || resultHorses.length === 0 || shutubaHorses.length >= resultHorses.length)
+  const selectedBaseHorses = useShutuba ? shutubaHorses : resultHorses
+  const horses = mergeShutubaOdds(selectedBaseHorses, shutubaHorses)
   const raceName = useShutuba ? shutubaRaceName : resultRaceName
   const raceNumber = useShutuba ? shutubaRaceNumber : resultRaceNumber
   const raceInfo = useShutuba ? shutubaInfo : resultInfo
 
   if (horses.length === 0) {
     throw new Error(
-      `No horses parsed for race ${raceId}. Result rows: ${resultRows.length}, shutuba rows: ${shutubaRows.length}.`,
+      `No horses parsed for race ${raceId}. Result rows: ${resultRows.length}, shutuba rows: ${shutubaRowsLength}.`,
     )
   }
 
