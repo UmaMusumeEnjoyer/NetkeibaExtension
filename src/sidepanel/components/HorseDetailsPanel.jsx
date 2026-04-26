@@ -159,12 +159,14 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
                     <span />
                     <span />
                     <span />
+                    <span />
                   </div>
 
                   {profileEntries.length === 0 && (
                     <div className="history-grid history-grid-row">
                       <span>-</span>
                       <span>プロフィール情報がありません</span>
+                      <span />
                       <span />
                       <span />
                       <span />
@@ -178,6 +180,7 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
                         <p>{value}</p>
                       </div>
                       <span className="history-jockey" />
+                      <span className="history-distance" />
                       <span className="history-odds" />
                       <span className="history-rank rank-neutral">-</span>
                     </div>
@@ -199,6 +202,7 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
                   <span>日付</span>
                   <span>レース</span>
                   <span>騎手</span>
+                  <span>距離</span>
                   <span>オッズ</span>
                   <span>着順</span>
                 </div>
@@ -214,6 +218,7 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
                       <small>{`${item.venue ?? '-'} • ${item.weather ?? '-'} • ${item.goalTime ?? '-'}`}</small>
                     </div>
                     <span className="history-jockey">{item.jockey ?? '-'}</span>
+                    <span className="history-distance">{item.distance ?? '-'}</span>
                     <span className="history-odds">{item.odds ?? '-'}</span>
                     <span className={`history-rank ${getRankClass(item.finishPosition)}`}>{item.finishPosition ?? '-'}</span>
                   </div>

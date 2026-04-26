@@ -67,6 +67,7 @@ export interface RaceHistoryRecord {
   horseNumber?: string
   jockey?: string
   carriedWeight?: string
+  distance?: string
   odds?: string
   popularity?: string
   finishPosition?: string
