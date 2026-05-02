@@ -1,0 +1,10 @@
+{
+  "common": {
+    "app_name": "Keiba Data Crawler",
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "settings": "Settings",
+    "language": "Language",
+    "switch_language": "Switch Language"
+  }
+}

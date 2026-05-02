@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import './styles.css'
 import './App.css'
@@ -8,6 +9,7 @@ import OddsTable from './components/OddsTable.jsx'
 import { fetchHorseDetails, fetchRaceHorses, fetchRaceList, runPipeline } from '../api'
 
 function App() {
+  const { t, i18n } = useTranslation()
   const [races, setRaces] = useState([])
   const [selectedTrack, setSelectedTrack] = useState('')
   const [selectedRaceId, setSelectedRaceId] = useState('')
@@ -20,6 +22,11 @@ function App() {
   const [pipelineMessage, setPipelineMessage] = useState('')
   const [loadingLabel, setLoadingLabel] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+  
+  const toggleLanguage = () => {
+    const nextLng = i18n.language === 'ja' ? 'en' : 'ja'
+    i18n.changeLanguage(nextLng)
+  }
 
   const horses = raceResult?.horses ?? []
 
@@ -252,6 +259,16 @@ function App() {
             onClick={handleLoadRaces}
           >
             ↻
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Switch language"
+            title={t('common.switch_language')}
+            onClick={toggleLanguage}
+            style={{ fontSize: '14px', fontWeight: 'bold' }}
+          >
+            {i18n.language === 'ja' ? 'EN' : 'JA'}
           </button>
         </div>
       </header>
