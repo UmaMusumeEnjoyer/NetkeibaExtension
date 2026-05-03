@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import './HorseDetailsPanel.css'
 
@@ -8,26 +9,27 @@ function buildPedigreeLevels(pedigree = []) {
   }
 
   const levelSizes = [1, 2, 4, 8]
-  const levelLabels = ['第1世代', '第2世代', '第3世代', '第4世代']
+  // Thay thế text cứng bằng internal keys
   const roleByLevel = [
-    ['対象馬'],
-    ['父', '母'],
-    ['父父', '父母', '母父', '母母'],
-    ['父父父', '父父母', '父母父', '父母母', '母父父', '母父母', '母母父', '母母母'],
+    ['self'],
+    ['sire', 'dam'],
+    ['sire_sire', 'sire_dam', 'dam_sire', 'dam_dam'],
+    ['sire_sire_sire', 'sire_sire_dam', 'sire_dam_sire', 'sire_dam_dam', 'dam_sire_sire', 'dam_sire_dam', 'dam_dam_sire', 'dam_dam_dam'],
   ]
   let cursor = 0
 
   return levelSizes
     .map((size, index) => {
       const entries = pedigree.slice(cursor, cursor + size).map((node, entryIndex) => ({
-        role: roleByLevel[index]?.[entryIndex] ?? `Line ${entryIndex + 1}`,
+        roleKey: roleByLevel[index]?.[entryIndex] ?? `line_${entryIndex + 1}`,
         name: node.horseName,
-        key: node.link ?? `${levelLabels[index]}-${entryIndex}-${node.horseId ?? node.horseName}`,
+        key: node.link ?? `gen${index + 1}-${entryIndex}-${node.horseId ?? node.horseName}`,
+        fallbackIndex: entryIndex + 1
       }))
       cursor += size
 
       return {
-        generation: levelLabels[index],
+        levelIndex: index + 1, // 1, 2, 3, 4
         entries,
       }
     })
@@ -44,40 +46,30 @@ function getRankClass(finishPosition) {
   return 'rank-neutral'
 }
 
-function getPedigreeBranch(role) {
-  if (role === '対象馬') {
+function getPedigreeBranch(roleKey) {
+  if (roleKey === 'self') {
     return 'self'
   }
-
-  return role.startsWith('父') ? 'sire' : 'dam'
+  return roleKey.startsWith('sire') ? 'sire' : 'dam'
 }
 
-function getFourthGenerationBranch(role) {
-  if (role.length < 3) {
+function getFourthGenerationBranch(roleKey) {
+  const parts = roleKey.split('_')
+  if (parts.length < 2) {
     return ''
   }
 
-  const group = role.slice(0, 2)
-  if (group === '父父') {
-    return 'sire-sire'
-  }
-
-  if (group === '父母') {
-    return 'sire-dam'
-  }
-
-  if (group === '母父') {
-    return 'dam-sire'
-  }
-
-  if (group === '母母') {
-    return 'dam-dam'
-  }
+  const group = `${parts[0]}_${parts[1]}`
+  if (group === 'sire_sire') return 'sire-sire'
+  if (group === 'sire_dam') return 'sire-dam'
+  if (group === 'dam_sire') return 'dam-sire'
+  if (group === 'dam_dam') return 'dam-dam'
 
   return ''
 }
 
 function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, onClose }) {
+  const { t } = useTranslation()
   const horseName = runner?.horse ?? 'Equinox'
   const jockeyName = runner?.jockey ?? 'C. Lemaire'
   const profileEntries = Object.entries(details?.profile ?? {})
@@ -96,7 +88,7 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
       <button
         type="button"
         className="horse-detail-backdrop"
-        aria-label="馬詳細を閉じる"
+        aria-label={t('horseDetails.aria.close')}
         onClick={onClose}
       />
 
@@ -104,58 +96,58 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
         className="horse-detail-sheet"
         role="dialog"
         aria-modal="true"
-        aria-label="馬詳細"
+        aria-label={t('horseDetails.aria.panel')}
       >
         <header className="horse-detail-header surface-highest">
           <div>
-            <span className="horse-badge">{runner?.sexAge ?? '詳細情報'}</span>
+            <span className="horse-badge">{runner?.sexAge ?? t('horseDetails.header.defaultSexAge')}</span>
             <h3>{horseName}</h3>
-            <p>{`${runner?.carriedWeight ?? '-'}kg • ${jockeyName} • 人気 ${runner?.popularity ?? '-'}`}</p>
+            <p>{`${runner?.carriedWeight ?? '-'}kg • ${jockeyName} • ${t('horseDetails.header.popularity')} ${runner?.popularity ?? '-'}`}</p>
           </div>
           <button
             type="button"
             className="horse-close-btn"
-            aria-label="馬詳細を閉じる"
+            aria-label={t('horseDetails.aria.close')}
             onClick={onClose}
           >
             ×
           </button>
         </header>
 
-        <nav className="horse-tabs surface-highest" aria-label="馬詳細タブ">
+        <nav className="horse-tabs surface-highest" aria-label={t('horseDetails.aria.tabs')}>
           <button
             type="button"
             className={`horse-tab${activeTab === 'overview' ? ' active' : ''}`}
             onClick={() => setActiveTab('overview')}
           >
-            基本情報
+            {t('horseDetails.tabs.overview')}
           </button>
           <button
             type="button"
             className={`horse-tab${activeTab === 'history' ? ' active' : ''}`}
             onClick={() => setActiveTab('history')}
           >
-            戦績
+            {t('horseDetails.tabs.history')}
           </button>
           <button
             type="button"
             className={`horse-tab${activeTab === 'pedigree' ? ' active' : ''}`}
             onClick={() => setActiveTab('pedigree')}
           >
-            血統
+            {t('horseDetails.tabs.pedigree')}
           </button>
         </nav>
 
         <section className="horse-detail-content">
           {activeTab === 'overview' && (
             <>
-              {isLoading && <p className="placeholder">Loading horse details...</p>}
+              {isLoading && <p className="placeholder">{t('horseDetails.status.loading')}</p>}
               {errorMessage && <p className="placeholder">{errorMessage}</p>}
               {!isLoading && !errorMessage && (
                 <div className="history-table ghost-border">
                   <div className="history-grid history-grid-head">
-                    <span>項目</span>
-                    <span>内容</span>
+                    <span>{t('horseDetails.overview.headerItem')}</span>
+                    <span>{t('horseDetails.overview.headerContent')}</span>
                     <span />
                     <span />
                     <span />
@@ -165,7 +157,7 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
                   {profileEntries.length === 0 && (
                     <div className="history-grid history-grid-row">
                       <span>-</span>
-                      <span>プロフィール情報がありません</span>
+                      <span>{t('horseDetails.overview.noProfileData')}</span>
                       <span />
                       <span />
                       <span />
@@ -193,21 +185,21 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
           {activeTab === 'history' && (
             <>
               <div className="history-head">
-                <h4>最近の成績</h4>
-                <span>{raceHistory.length > 0 ? `全 ${raceHistory.length} 走` : 'データなし'}</span>
+                <h4>{t('horseDetails.history.recentResults')}</h4>
+                <span>{raceHistory.length > 0 ? t('horseDetails.history.totalRaces', { count: raceHistory.length }) : t('horseDetails.history.noData')}</span>
               </div>
 
               <div className="history-table ghost-border">
                 <div className="history-grid history-grid-head">
-                  <span>日付</span>
-                  <span>レース</span>
-                  <span>騎手</span>
-                  <span>距離</span>
-                  <span>オッズ</span>
-                  <span>着順</span>
+                  <span>{t('horseDetails.history.date')}</span>
+                  <span>{t('horseDetails.history.race')}</span>
+                  <span>{t('horseDetails.history.jockey')}</span>
+                  <span>{t('horseDetails.history.distance')}</span>
+                  <span>{t('horseDetails.history.odds')}</span>
+                  <span>{t('horseDetails.history.finish')}</span>
                 </div>
 
-                {isLoading && <p className="placeholder">Loading horse details...</p>}
+                {isLoading && <p className="placeholder">{t('horseDetails.status.loading')}</p>}
                 {errorMessage && <p className="placeholder">{errorMessage}</p>}
 
                 {!isLoading && !errorMessage && raceHistory.map((item, index) => (
@@ -225,7 +217,7 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
                 ))}
 
                 {!isLoading && !errorMessage && raceHistory.length === 0 && (
-                  <p className="placeholder">No race history data.</p>
+                  <p className="placeholder">{t('horseDetails.status.noHistory')}</p>
                 )}
               </div>
             </>
@@ -234,40 +226,44 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
           {activeTab === 'pedigree' && (
             <div className="pedigree-view">
               <div className="pedigree-head">
-                <h4>4世代血統</h4>
-                <span>縦スクロール表示</span>
+                <h4>{t('horseDetails.pedigree.gen4')}</h4>
+                <span>{t('horseDetails.pedigree.verticalScroll')}</span>
               </div>
 
-              <div className="pedigree-legend" aria-label="血統の色分け凡例">
-                <span className="legend-chip sire">父系</span>
-                <span className="legend-chip dam">母系</span>
+              <div className="pedigree-legend" aria-label={t('horseDetails.aria.legendColor')}>
+                <span className="legend-chip sire">{t('horseDetails.pedigree.sireLine')}</span>
+                <span className="legend-chip dam">{t('horseDetails.pedigree.damLine')}</span>
               </div>
 
-              <div className="pedigree-legend pedigree-legend-detail" aria-label="第4世代の色分け凡例">
-                <span className="legend-chip detail-sire-sire">父父系</span>
-                <span className="legend-chip detail-sire-dam">父母系</span>
-                <span className="legend-chip detail-dam-sire">母父系</span>
-                <span className="legend-chip detail-dam-dam">母母系</span>
+              <div className="pedigree-legend pedigree-legend-detail" aria-label={t('horseDetails.aria.legendGen4')}>
+                <span className="legend-chip detail-sire-sire">{t('horseDetails.pedigree.sireSireLine')}</span>
+                <span className="legend-chip detail-sire-dam">{t('horseDetails.pedigree.sireDamLine')}</span>
+                <span className="legend-chip detail-dam-sire">{t('horseDetails.pedigree.damSireLine')}</span>
+                <span className="legend-chip detail-dam-dam">{t('horseDetails.pedigree.damDamLine')}</span>
               </div>
 
               <div className="pedigree-timeline">
-                {isLoading && <p className="placeholder">Loading horse details...</p>}
+                {isLoading && <p className="placeholder">{t('horseDetails.status.loading')}</p>}
                 {errorMessage && <p className="placeholder">{errorMessage}</p>}
 
                 {!isLoading && !errorMessage && pedigreeLevels.map((level) => (
-                  <section key={level.generation} className="pedigree-level ghost-border">
+                  <section key={`gen-${level.levelIndex}`} className="pedigree-level ghost-border">
                     <div className="pedigree-level-top">
-                      <span className="pedigree-generation">{level.generation}</span>
-                      <span className="pedigree-count">{level.entries.length}頭</span>
+                      <span className="pedigree-generation">{t('horseDetails.pedigree.generationLabel', { gen: level.levelIndex })}</span>
+                      <span className="pedigree-count">{t('horseDetails.pedigree.headCount', { count: level.entries.length })}</span>
                     </div>
 
                     <div
                       className={`pedigree-grid${level.entries.length <= 2 ? ' single' : ''}`}
                     >
                       {level.entries.map((entry) => {
-                        const branch = getPedigreeBranch(entry.role)
-                        const detailBranch = getFourthGenerationBranch(entry.role)
-                        const isThirdGeneration = level.generation === '第3世代'
+                        const branch = getPedigreeBranch(entry.roleKey)
+                        const detailBranch = getFourthGenerationBranch(entry.roleKey)
+                        const isThirdGeneration = level.levelIndex === 3
+                        
+                        const roleText = entry.roleKey.startsWith('line_') 
+                            ? t('horseDetails.roles.line', { num: entry.fallbackIndex })
+                            : t(`horseDetails.roles.${entry.roleKey}`)
 
                         return (
                           <article
@@ -281,7 +277,7 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
                             }`}
                           >
                             <p>{entry.name}</p>
-                            <small>{entry.role}</small>
+                            <small>{roleText}</small>
                           </article>
                         )
                       })}
@@ -290,7 +286,7 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
                 ))}
 
                 {!isLoading && !errorMessage && pedigreeLevels.length === 0 && (
-                  <p className="placeholder">No pedigree data.</p>
+                  <p className="placeholder">{t('horseDetails.status.noPedigree')}</p>
                 )}
               </div>
             </div>

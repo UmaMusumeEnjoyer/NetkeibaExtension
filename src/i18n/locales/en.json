@@ -1,10 +1,113 @@
 {
   "common": {
-    "app_name": "Keiba Data Crawler",
-    "loading": "Loading...",
-    "error": "An error occurred",
-    "settings": "Settings",
-    "language": "Language",
+    "app_name": "Netkeiba Crawler",
     "switch_language": "Switch Language"
+  },
+  "raceList": {
+    "refreshRaces": "Refresh race list",
+    "loadingRaces": "Loading races...",
+    "loadingHorses": "Loading horses for race...",
+    "pipelineRunning": "Running quick pipeline (1 race, 3 horses)...",
+    "selectRaceFirst": "Please select a race first."
+  },
+  "filters": {
+    "trackLabel": "Track",
+    "raceLabel": "Race",
+    "placeholder": "Please select"
+  },
+  "raceInfo": {
+    "title": "Race Basic Info",
+    "raceName": "Race Name",
+    "startTime": "Start Time",
+    "course": "Course",
+    "weather": "Weather",
+    "trackCondition": "Track Condition",
+    "turnDirection": "Turn",
+    "fieldSize": "Field Size",
+    "fieldSizeUnit": " horses",
+    "sourcePage": "Source Page"
+  },
+  "oddsTable": {
+    "title": "Full Results"
+  },
+  "oddsTableComponent": {
+    "horseNo": "No.",
+    "horseNameFinishInfo": "Horse / Finish Info",
+    "ariaFullResults": "Full Results",
+    "ariaOpenDetails": "Open details for {{horse}}",
+    "jockeyPrefix": "Jockey: ",
+    "ariaFinishInfo": "Finish Info",
+    "oddsLabel": "Odds",
+    "popularityLabel": "Fav",
+    "gateLabel": "Gate"
+  },
+  "horseDetails": {
+    "aria": {
+      "close": "Close horse details",
+      "panel": "Horse details",
+      "tabs": "Horse detail tabs",
+      "legendColor": "Pedigree color legend",
+      "legendGen4": "4th generation color legend"
+    },
+    "header": {
+      "defaultSexAge": "Details",
+      "popularity": "Fav"
+    },
+    "tabs": {
+      "overview": "Overview",
+      "history": "History",
+      "pedigree": "Pedigree"
+    },
+    "overview": {
+      "headerItem": "Item",
+      "headerContent": "Content",
+      "noProfileData": "No profile information available"
+    },
+    "history": {
+      "recentResults": "Recent Results",
+      "totalRaces": "{{count}} races",
+      "noData": "No data",
+      "date": "Date",
+      "race": "Race",
+      "jockey": "Jockey",
+      "distance": "Dist",
+      "odds": "Odds",
+      "finish": "Pos"
+    },
+    "pedigree": {
+      "gen4": "4-Generation Pedigree",
+      "verticalScroll": "Vertical scroll",
+      "sireLine": "Sire Line",
+      "damLine": "Dam Line",
+      "sireSireLine": "Sire's Sire Line",
+      "sireDamLine": "Sire's Dam Line",
+      "damSireLine": "Dam's Sire Line",
+      "damDamLine": "Dam's Dam Line",
+      "generationLabel": "Gen {{gen}}",
+      "headCount": "{{count}}"
+    },
+    "status": {
+      "loading": "Loading horse details...",
+      "noHistory": "No race history data.",
+      "noPedigree": "No pedigree data."
+    },
+    "roles": {
+      "self": "Self",
+      "sire": "Sire",
+      "dam": "Dam",
+      "sire_sire": "Sire's Sire",
+      "sire_dam": "Sire's Dam",
+      "dam_sire": "Dam's Sire",
+      "dam_dam": "Dam's Dam",
+      "sire_sire_sire": "Sire's Sire's Sire",
+      "sire_sire_dam": "Sire's Sire's Dam",
+      "sire_dam_sire": "Sire's Dam's Sire",
+      "sire_dam_dam": "Sire's Dam's Dam",
+      "dam_sire_sire": "Dam's Sire's Sire",
+      "dam_sire_dam": "Dam's Sire's Dam",
+      "dam_dam_sire": "Dam's Dam's Sire",
+      "dam_dam_dam": "Dam's Dam's Dam",
+      "line": "Line {{num}}"
+    }
   }
 }

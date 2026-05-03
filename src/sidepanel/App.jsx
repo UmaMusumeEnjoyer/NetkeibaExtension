@@ -48,6 +48,7 @@ function App() {
     () =>
       filteredRaces.map((race) => ({
         value: race.raceId,
+        // Dữ liệu API (race.raceNumber, race.raceName) giữ nguyên
         label: `${race.raceNumber ? `${race.raceNumber} ` : ''}${race.raceName}`,
       })),
     [filteredRaces],
@@ -58,6 +59,7 @@ function App() {
       horses.map((horse, index) => ({
         horseId: horse.horseId,
         no: horse.horseNumber || String(index + 1),
+        // Dữ liệu API giữ nguyên
         horse: horse.horseName,
         jockey: horse.jockeyName || '-',
         odds: horse.odds || '-',
@@ -90,21 +92,22 @@ function App() {
     }
 
     const info = raceResult.raceInfo ?? {}
+    // Dữ liệu API giữ nguyên
     const raceTitle = `${raceResult.raceNumber ? `${raceResult.raceNumber} ` : ''}${raceResult.raceName ?? '-'}`
     const course = info.distance ? `${info.surfaceType ?? ''}${info.distance}m` : '-'
-    const fieldSize = info.fieldSize ? `${info.fieldSize}頭` : '-'
+    const fieldSize = info.fieldSize ? `${info.fieldSize}${t('raceInfo.fieldSizeUnit')}` : '-'
 
     return [
-      { label: 'レース名', value: raceTitle },
-      { label: '発走時刻', value: info.startTime ?? '-' },
-      { label: 'コース', value: course },
-      { label: '天候', value: info.weather ?? '-' },
-      { label: '馬場状態', value: info.trackCondition ?? '-' },
-      { label: '回り', value: info.turnDirection ?? '-' },
-      { label: '頭数', value: fieldSize },
-      { label: '参照ページ', value: info.sourcePage ?? '-' },
+      { label: t('raceInfo.raceName'), value: raceTitle },
+      { label: t('raceInfo.startTime'), value: info.startTime ?? '-' },
+      { label: t('raceInfo.course'), value: course },
+      { label: t('raceInfo.weather'), value: info.weather ?? '-' },
+      { label: t('raceInfo.trackCondition'), value: info.trackCondition ?? '-' },
+      { label: t('raceInfo.turnDirection'), value: info.turnDirection ?? '-' },
+      { label: t('raceInfo.fieldSize'), value: fieldSize },
+      { label: t('raceInfo.sourcePage'), value: info.sourcePage ?? '-' },
     ]
-  }, [raceResult])
+  }, [raceResult, t]) // Thêm 't' vào dependency array
 
   useEffect(() => {
     if (filteredRaces.length === 0) {
@@ -165,7 +168,7 @@ function App() {
   }, [isHorseDetailsOpen, selectedHorseId])
 
   async function handleLoadRaces() {
-    setLoadingLabel('Loading races...')
+    setLoadingLabel(t('raceList.loadingRaces'))
     setErrorMessage('')
     setPipelineMessage('')
     try {
@@ -187,7 +190,7 @@ function App() {
 
   async function handleLoadHorses() {
     if (!selectedRaceId) {
-      setErrorMessage('Please select a race first.')
+      setErrorMessage(t('raceList.selectRaceFirst'))
       return
     }
 
@@ -196,11 +199,11 @@ function App() {
 
   async function loadHorsesForRace(raceId) {
     if (!raceId) {
-      setErrorMessage('Please select a race first.')
+      setErrorMessage(t('raceList.selectRaceFirst'))
       return
     }
 
-    setLoadingLabel(`Loading horses for race ${raceId}...`)
+    setLoadingLabel(`${t('raceList.loadingHorses')} ${raceId}...`)
     setErrorMessage('')
     setPipelineMessage('')
     try {
@@ -224,7 +227,7 @@ function App() {
   }
 
   async function handleRunQuickPipeline() {
-    setLoadingLabel('Running quick pipeline (1 race, 3 horses)...')
+    setLoadingLabel(t('raceList.pipelineRunning'))
     setErrorMessage('')
     try {
       const result = await runPipeline({ raceLimit: 1, horsePerRaceLimit: 3 })
@@ -249,13 +252,13 @@ function App() {
   return (
     <div className="tracker">
       <header className="tracker-header surface-highest">
-        <h1>Netkeiba Crawler</h1>
+        <h1>{t('common.app_name')}</h1>
         <div className="header-actions" aria-label="Header actions">
           <button
             type="button"
             className="icon-btn"
-            aria-label="Refresh races"
-            title="レース一覧を再取得します"
+            aria-label={t('raceList.refreshRaces')}
+            title={t('raceList.refreshRaces')}
             onClick={handleLoadRaces}
           >
             ↻
@@ -277,19 +280,19 @@ function App() {
         <section className="filter-card surface-low ghost-border">
           <div className="filter-grid">
             <Dropdown
-              label="競馬場"
+              label={t('filters.trackLabel')}
               value={selectedTrack}
               options={trackOptions}
               onChange={setSelectedTrack}
-              placeholder="選択してください"
+              placeholder={t('filters.placeholder')}
               disabled={Boolean(loadingLabel) || trackOptions.length === 0}
             />
             <Dropdown
-              label="レース"
+              label={t('filters.raceLabel')}
               value={selectedRaceId}
               options={raceOptions}
               onChange={handleSelectRace}
-              placeholder="選択してください"
+              placeholder={t('filters.placeholder')}
               disabled={Boolean(loadingLabel) || raceOptions.length === 0}
             />
           </div>
@@ -297,8 +300,8 @@ function App() {
 
         <section className="odds-section">
           {raceResult && (
-            <section className="race-basic-section surface-low ghost-border" aria-label="レース基本情報">
-              <h2>レース基本情報</h2>
+            <section className="race-basic-section surface-low ghost-border" aria-label={t('raceInfo.title')}>
+              <h2>{t('raceInfo.title')}</h2>
               <div className="race-basic-grid">
                 {raceBasicInfoRows.map((item) => (
                   <div key={item.label} className="race-basic-row">
@@ -311,7 +314,7 @@ function App() {
           )}
 
           <div className="odds-title-row">
-            <h2>全着順</h2>
+            <h2>{t('oddsTable.title')}</h2>
           </div>
 
           <OddsTable

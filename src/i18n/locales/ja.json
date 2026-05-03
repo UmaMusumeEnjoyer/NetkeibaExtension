@@ -1,10 +1,113 @@
 {
   "common": {
-    "app_name": "競馬データクローラー",
-    "loading": "読み込み中...",
-    "error": "エラーが発生しました",
-    "settings": "設定",
-    "language": "言語",
+    "app_name": "Netkeiba Crawler",
     "switch_language": "言語を切り替える"
+  },
+  "raceList": {
+    "refreshRaces": "レース一覧を再取得します",
+    "loadingRaces": "レースを読み込み中...",
+    "loadingHorses": "レースの馬を読み込み中...",
+    "pipelineRunning": "パイプラインを実行中...",
+    "selectRaceFirst": "先にレースを選択してください。"
+  },
+  "filters": {
+    "trackLabel": "競馬場",
+    "raceLabel": "レース",
+    "placeholder": "選択してください"
+  },
+  "raceInfo": {
+    "title": "レース基本情報",
+    "raceName": "レース名",
+    "startTime": "発走時刻",
+    "course": "コース",
+    "weather": "天候",
+    "trackCondition": "馬場状態",
+    "turnDirection": "回り",
+    "fieldSize": "頭数",
+    "fieldSizeUnit": "頭",
+    "sourcePage": "参照ページ"
+  },
+  "oddsTable": {
+    "title": "全着順"
+  },
+  "oddsTableComponent": {
+    "horseNo": "馬番",
+    "horseNameFinishInfo": "馬名 / 着順情報",
+    "ariaFullResults": "全着順",
+    "ariaOpenDetails": "{{horse}}の詳細を開く",
+    "jockeyPrefix": "騎手：",
+    "ariaFinishInfo": "着順情報",
+    "oddsLabel": "オッズ",
+    "popularityLabel": "人気",
+    "gateLabel": "枠"
+  },
+  "horseDetails": {
+    "aria": {
+      "close": "馬詳細を閉じる",
+      "panel": "馬詳細",
+      "tabs": "馬詳細タブ",
+      "legendColor": "血統の色分け凡例",
+      "legendGen4": "第4世代の色分け凡例"
+    },
+    "header": {
+      "defaultSexAge": "詳細情報",
+      "popularity": "人気"
+    },
+    "tabs": {
+      "overview": "基本情報",
+      "history": "戦績",
+      "pedigree": "血統"
+    },
+    "overview": {
+      "headerItem": "項目",
+      "headerContent": "内容",
+      "noProfileData": "プロフィール情報がありません"
+    },
+    "history": {
+      "recentResults": "最近の成績",
+      "totalRaces": "全 {{count}} 走",
+      "noData": "データなし",
+      "date": "日付",
+      "race": "レース",
+      "jockey": "騎手",
+      "distance": "距離",
+      "odds": "オッズ",
+      "finish": "着順"
+    },
+    "pedigree": {
+      "gen4": "4世代血統",
+      "verticalScroll": "縦スクロール表示",
+      "sireLine": "父系",
+      "damLine": "母系",
+      "sireSireLine": "父父系",
+      "sireDamLine": "父母系",
+      "damSireLine": "母父系",
+      "damDamLine": "母母系",
+      "generationLabel": "第{{gen}}世代",
+      "headCount": "{{count}}頭"
+    },
+    "status": {
+      "loading": "読み込み中...",
+      "noHistory": "戦績データがありません。",
+      "noPedigree": "血統データがありません。"
+    },
+    "roles": {
+      "self": "対象馬",
+      "sire": "父",
+      "dam": "母",
+      "sire_sire": "父父",
+      "sire_dam": "父母",
+      "dam_sire": "母父",
+      "dam_dam": "母母",
+      "sire_sire_sire": "父父父",
+      "sire_sire_dam": "父父母",
+      "sire_dam_sire": "父母父",
+      "sire_dam_dam": "父母母",
+      "dam_sire_sire": "母父父",
+      "dam_sire_dam": "母父母",
+      "dam_dam_sire": "母母父",
+      "dam_dam_dam": "母母母",
+      "line": "ライン {{num}}"
+    }
   }
 }
