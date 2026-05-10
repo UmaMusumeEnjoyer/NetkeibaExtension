@@ -103,9 +103,20 @@ export async function fetchHtml(url: string, delayMs = 0): Promise<string> {
     await sleep(delayMs)
   }
 
+  // Use a copy of default headers and adjust referer for EN pages
+  const headers: HeadersInit = { ...DEFAULT_HEADERS }
+  try {
+    const u = new URL(url)
+    if (u.hostname === 'en.netkeiba.com') {
+      headers.referer = 'https://en.netkeiba.com/'
+    }
+  } catch {
+    // ignore URL parse errors and fallback to defaults
+  }
+
   const response = await fetch(url, {
     method: 'GET',
-    headers: DEFAULT_HEADERS,
+    headers,
     credentials: 'include',
   })
 

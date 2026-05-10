@@ -27,6 +27,17 @@ function normalizeText(value: string | undefined): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
+function findCellByClass(
+  cells: Array<{ text?: string; className: string }>,
+  classPattern: RegExp,
+): { text?: string; className: string } | undefined {
+  return cells.find((cell) => classPattern.test(cell.className))
+}
+
+function findCellTextByClass(cells: Array<{ text?: string; className: string }>, classPattern: RegExp): string | undefined {
+  return findCellByClass(cells, classPattern)?.text
+}
+
 // Hàm dịch mã Giới tính & Tuổi từ Tiếng Anh sang chuẩn
 function parseSexAgeEN(sexAgeStr: string | undefined): { horseSex?: string; horseAge?: string } {
   if (!sexAgeStr) return {}
@@ -90,6 +101,19 @@ function parseRaceInfoEN($: ReturnType<typeof load>, sourcePage: 'result' | 'shu
   }
 }
 
+function getHorseRowsEN($: ReturnType<typeof load>, mode: 'result' | 'shutuba') {
+  if (mode === 'result') {
+    return $('.ResultTableWrap tbody tr.HorseList')
+  }
+
+  const shutubaRows = $('.Shutuba_Table tbody tr.HorseList')
+  if (shutubaRows.length > 0) {
+    return shutubaRows
+  }
+
+  return $('.RaceTable01.RaceCommon_Table tbody tr.HorseList')
+}
+
 function parseHorseRowsEN(
   $: ReturnType<typeof load>,
   rows: ReturnType<typeof $>,
@@ -100,37 +124,57 @@ function parseHorseRowsEN(
   const seenHorseIds = new Set<string>()
 
   rows.each((_, row) => {
-    const horseAnchor = $(row).find('a[href*="/horse/"]').first()
+    const horseAnchorSelector = 'a[data-url], dt.Horse a, .Horse_Name a, td.Horse_Name a, td.HorseInfo a, .HorseInfo a'
+    const horseAnchor = $(row).find(horseAnchorSelector).first().length
+      ? $(row).find(horseAnchorSelector).first()
+      : $(row).find('a[href*="/horse/"]').first()
     if (horseAnchor.length === 0) return
 
-    const rawHref = horseAnchor.attr('href')
+    let rawHref = horseAnchor.attr('href')
+    // Some EN pages use javascript href and keep the actual URL in data-url attribute
+    if (!rawHref || rawHref.startsWith('javascript')) {
+      const dataUrl = horseAnchor.attr('data-url')
+      if (dataUrl) rawHref = dataUrl
+    }
     if (!rawHref) return
 
     const horseDetailLink = toAbsoluteUrl(RACE_SITE_BASE_EN, rawHref)
-    const horseId = extractIdFromLink(horseDetailLink, 'horse')
+    let horseId = extractIdFromLink(horseDetailLink, 'horse')
+    if (!horseId) {
+      const m = horseDetailLink.match(/[?&]horse_id=(\d+)/)
+      if (m) horseId = m[1]
+    }
     if (!horseId || seenHorseIds.has(horseId)) return
     seenHorseIds.add(horseId)
 
     const horseName = normalizeText(horseAnchor.text().replace(/のデータベース/g, ''))
+
+    const tdCells = $(row).find('td')
+
+    // --- Lấy rawColumns và cellsWithClass để tìm theo class (ví dụ Txt_L / Jockey) ---
+    const rawColumns: string[] = []
+    const cellsWithClass: Array<{ text?: string; className: string }> = []
+    tdCells.each((__, cell) => {
+      const txt = normalizeText($(cell).text())
+      rawColumns.push(txt)
+      cellsWithClass.push({ text: txt || undefined, className: $(cell).attr('class') ?? '' })
+    })
+    const cells = rawColumns
 
     const jockeyAnchor = $(row).find('a[href*="/jockey/"]').first()
     const trainerAnchor = $(row).find('a[href*="/trainer/"]').first()
 
     const jockeyLink = jockeyAnchor.length ? toAbsoluteUrl(RACE_SITE_BASE_EN, jockeyAnchor.attr('href')!) : undefined
     const jockeyId = jockeyLink ? extractIdFromLink(jockeyLink, 'jockey') : undefined
-    const jockeyName = normalizeText(jockeyAnchor.text())
+    const jockeyName = jockeyAnchor.length
+      ? normalizeText(jockeyAnchor.text())
+      : findCellTextByClass(cellsWithClass, /\bJockey\b|\bTxt_L\b/i) || normalizeText(cells[6] || '')
 
     const trainerLink = trainerAnchor.length ? toAbsoluteUrl(RACE_SITE_BASE_EN, trainerAnchor.attr('href')!) : undefined
     const trainerId = trainerLink ? extractIdFromLink(trainerLink, 'trainer') : undefined
-    const trainerName = normalizeText(trainerAnchor.text())
-
-    const tdCells = $(row).find('td')
-    
-    // --- Lấy rawColumns bắt buộc theo types.ts ---
-    const rawColumns: string[] = []
-    tdCells.each((__, cell) => {
-      rawColumns.push(normalizeText($(cell).text()))
-    })
+    const trainerName = trainerAnchor.length
+      ? normalizeText(trainerAnchor.text())
+      : findCellTextByClass(cellsWithClass, /Nowrap_Text|Trainer/i) || normalizeText(cells[7] || '')
 
     const frameNumber = normalizeText(tdCells.eq(0).text())
     const horseNumber = normalizeText(tdCells.eq(1).text())
@@ -284,7 +328,7 @@ export async function fetchRaceHorsesEN(raceId: string): Promise<RaceResult> {
 
   const resultRaceName = normalizeText(result$('h1').text()) || undefined
   const resultRaceNumber = normalizeText(result$('.RaceNum').text()) || undefined
-  const resultRows = result$('table tbody tr')
+  const resultRows = getHorseRowsEN(result$, 'result')
   const resultHorses = parseHorseRowsEN(result$, resultRows, raceId, 'result')
   const resultInfo = parseRaceInfoEN(result$, 'result')
 
@@ -301,7 +345,7 @@ export async function fetchRaceHorsesEN(raceId: string): Promise<RaceResult> {
 
     shutubaRaceName = normalizeText(shutuba$('h1').text()) || undefined
     shutubaRaceNumber = normalizeText(shutuba$('.RaceNum').first().text()) || undefined
-    const shutubaRows = shutuba$('table tbody tr')
+    const shutubaRows = getHorseRowsEN(shutuba$, 'shutuba')
     shutubaRowsLength = shutubaRows.length
     shutubaHorses = parseHorseRowsEN(shutuba$, shutubaRows, raceId, 'shutuba')
     shutubaInfo = parseRaceInfoEN(shutuba$, 'shutuba')
