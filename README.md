@@ -1,6 +1,6 @@
 # Keiba Data Crawler 🐴
 
-[**English**](#english-version) | [**日本語**](#japanese-version)
+[**English**](#english-version) | [**日本語**](#japanese-version-日本語版)
 
 ---
 
