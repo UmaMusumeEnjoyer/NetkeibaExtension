@@ -1,9 +1,23 @@
-import { load } from 'cheerio'
+import { load, type CheerioAPI } from 'cheerio'
+import type { Element } from 'domhandler'
 
 import { fetchHtml, toAbsoluteUrl, withRetry } from './http'
 import type { Race } from './types'
 
 const RACE_TOP_URL_EN = 'https://en.netkeiba.com/race/'
+
+const TRACK_NAME_BY_VENUE_CODE: Record<string, string> = {
+  '01': 'Sapporo',
+  '02': 'Hakodate',
+  '03': 'Fukushima',
+  '04': 'Niigata',
+  '05': 'Tokyo',
+  '06': 'Nakayama',
+  '07': 'Chukyo',
+  '08': 'Kyoto',
+  '09': 'Hanshin',
+  '10': 'Kokura',
+}
 
 function extractRaceId(url: string): string | null {
   try {
@@ -12,6 +26,11 @@ function extractRaceId(url: string): string | null {
   } catch {
     return null
   }
+}
+
+function extractTrackNameFromRaceId(raceId: string): string | undefined {
+  const venueCode = raceId.slice(4, 6)
+  return TRACK_NAME_BY_VENUE_CODE[venueCode]
 }
 
 function getTokyoDateStamp(date = new Date()): string {
@@ -28,75 +47,129 @@ function getTokyoDateStamp(date = new Date()): string {
   return `${year}${month}${day}`
 }
 
+function getVisibleRaceListDayWraps($: CheerioAPI) {
+  return $('.RaceListDayWrap').filter((_, element) => {
+    const style = ($(element).attr('style') ?? '').toLowerCase()
+    return !style.includes('display:none') && !style.includes('display: none')
+  })
+}
+
+function extractRaceName($: CheerioAPI, linkElement: Element): string {
+  const raceNameElement = $(linkElement).find('.Race_Name').first().clone()
+  raceNameElement.find('.Icon_GradeType').remove()
+
+  const normalized = raceNameElement.text().replace(/\s+/g, ' ').trim()
+  if (normalized.length > 0) {
+    return normalized
+  }
+
+  return $(linkElement).text().replace(/\s+/g, ' ').trim()
+}
+
+function extractRaceNumber($: CheerioAPI, linkElement: Element): string | undefined {
+  const raceNumberText = $(linkElement).find('.Race_Num span').first().text().trim()
+  if (!raceNumberText) {
+    return undefined
+  }
+
+  return raceNumberText.replace(/^R/i, '') || undefined
+}
+
+function extractRaceStartTime($: CheerioAPI, linkElement: Element): string | undefined {
+  const raceDataText = $(linkElement).find('.Race_Data').first().text().replace(/\s+/g, ' ').trim()
+  const timeMatch = raceDataText.match(/\b(\d{2}:\d{2})\b/)
+  return timeMatch?.[1]
+}
+
+function extractTrackName($: CheerioAPI, trackBlockElement: Element): string | undefined {
+  const trackWrap = $(trackBlockElement).closest('.RaceListDayWrap')
+  const activeTab = trackWrap.find('.jyo_tab li.Active a').first().text().replace(/\s+/g, ' ').trim()
+  if (activeTab) {
+    return activeTab
+  }
+
+  const fallbackTab = trackWrap.find('.jyo_tab a').first().text().replace(/\s+/g, ' ').trim()
+  return fallbackTab || undefined
+}
+
+function extractRaceCardsFromTrackBlock(
+  $: CheerioAPI,
+  trackBlockElement: Element,
+  sourceUrl: string,
+  seenRaceIds: Set<string>,
+): Race[] {
+  const trackName = extractTrackName($, trackBlockElement)
+
+  const races: Race[] = []
+
+  $(trackBlockElement)
+    .find('.RaceTopRaceMenuWrap .RaceListMainArea .RaceList_Main_Box > a[href*="race_id="]')
+    .each((_, linkElement) => {
+      const href = $(linkElement).attr('href')
+      if (!href) {
+        return
+      }
+
+      const raceListLink = toAbsoluteUrl(sourceUrl, href)
+      const raceId = extractRaceId(raceListLink)
+      if (!raceId || seenRaceIds.has(raceId)) {
+        return
+      }
+      seenRaceIds.add(raceId)
+
+      races.push({
+        raceId,
+        raceName: extractRaceName($, linkElement) || `Race ${raceId}`,
+        raceNumber: extractRaceNumber($, linkElement),
+        raceStartTime: extractRaceStartTime($, linkElement),
+        trackName: extractTrackNameFromRaceId(raceId) || trackName || undefined,
+        raceListLink,
+      })
+    })
+
+  return races
+}
+
 function parseRaceListHtmlEN(html: string, sourceUrl: string): Race[] {
   const $ = load(html)
   const races: Race[] = []
   const seenRaceIds = new Set<string>()
 
-  // Tìm tất cả các thẻ <a> dẫn đến trang shutuba.html (trang chứa Field chi tiết)
-  $('a[href*="shutuba.html?race_id="]').each((_, linkElement) => {
-    const relativeLink = $(linkElement).attr('href')
-    if (!relativeLink) {
-      return
-    }
-
-    const raceListLink = toAbsoluteUrl(sourceUrl, relativeLink)
-    const raceId = extractRaceId(raceListLink)
-    if (!raceId || seenRaceIds.has(raceId)) {
-      return
-    }
-    seenRaceIds.add(raceId)
-
-    // Lấy toàn bộ text của thẻ <a> (hoặc thẻ cha bọc nó) để dùng regex bóc tách
-    // Chuỗi text thô thường có dạng: "R12 ４yo+ ALW (2 Win) 16:30D1400m16 Rnrs"
-    const rawElementText = $(linkElement).parent().text().replace(/\s+/g, ' ').trim() || 
-                           $(linkElement).text().replace(/\s+/g, ' ').trim()
-
-    // 1. Tách raceNumber (Tìm R kèm theo các chữ số, VD: R12, R1)
-    const raceNumMatch = rawElementText.match(/R(\d+)/i)
-    const raceNumber = raceNumMatch ? raceNumMatch[1] : undefined
-
-    // 2. Tách raceStartTime (Tìm định dạng giờ phút, VD: 16:30, 09:45)
-    const timeMatch = rawElementText.match(/(\d{2}:\d{2})/)
-    const raceStartTime = timeMatch ? timeMatch[1] : undefined
-
-    // 3. Tách raceName (Lấy phần chữ nằm giữa raceNumber và raceStartTime)
-    let raceName = `Race ${raceId}` // Fallback mặc định
-    if (raceNumMatch && timeMatch) {
-      const startIdx = rawElementText.indexOf(raceNumMatch[0]) + raceNumMatch[0].length
-      const endIdx = rawElementText.indexOf(timeMatch[0])
-      if (startIdx < endIdx) {
-        raceName = rawElementText.substring(startIdx, endIdx).trim()
-      }
-    } else {
-      // Fallback nếu không có giờ hoặc số thứ tự đua rõ ràng
-      const possibleName = rawElementText.replace(/R\d+/i, '').replace(/\d{2}:\d{2}.*/, '').trim()
-      if (possibleName.length > 0) {
-        raceName = possibleName
-      }
-    }
-
-    // 4. Tách trackName (Tên trường đua: VD TOKYO, KYOTO)
-    // Tùy thuộc vào DOM, tên trường đua thường nằm ở một thẻ heading hoặc <li> ngay trước danh sách race
-    let trackName: string | undefined = undefined
-    const possibleTrackContainer = $(linkElement).closest('ul').prevAll('h2, h3, li').first()
-    if (possibleTrackContainer.length > 0) {
-      const possibleTrackText = possibleTrackContainer.text().replace(/\s+/g, ' ').trim()
-      // Chặn các thẻ không phải là trường đua (dựa vào việc trường đua trên EN thường viết in hoa và ngắn)
-      if (possibleTrackText.length > 0 && possibleTrackText.length < 20) {
-        trackName = possibleTrackText
-      }
-    }
-
-    races.push({
-      raceId,
-      raceName,
-      raceNumber,
-      raceStartTime,
-      trackName,
-      raceListLink,
+  getVisibleRaceListDayWraps($)
+    .find('.RaceList_SlideBoxItem')
+    .each((_, trackBlockElement) => {
+      races.push(...extractRaceCardsFromTrackBlock($, trackBlockElement, sourceUrl, seenRaceIds))
     })
-  })
+
+  if (races.length > 0) {
+    return races
+  }
+
+  getVisibleRaceListDayWraps($)
+    .find('a[href*="race_id="]')
+    .each((_, linkElement) => {
+      const href = $(linkElement).attr('href')
+      if (!href) {
+        return
+      }
+
+      const raceListLink = toAbsoluteUrl(sourceUrl, href)
+      const raceId = extractRaceId(raceListLink)
+      if (!raceId || seenRaceIds.has(raceId)) {
+        return
+      }
+      seenRaceIds.add(raceId)
+
+      const raceName = $(linkElement).text().replace(/\s+/g, ' ').trim() || `Race ${raceId}`
+      races.push({
+        raceId,
+        raceName,
+        raceNumber: undefined,
+        raceStartTime: undefined,
+        trackName: undefined,
+        raceListLink,
+      })
+    })
 
   return races
 }
