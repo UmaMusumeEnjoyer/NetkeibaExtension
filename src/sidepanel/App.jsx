@@ -144,7 +144,7 @@ function App() {
       setHorseDetailsLoading(true)
       setHorseDetailsError('')
       try {
-        const result = await fetchHorseDetails(selectedHorseId)
+        const result = await fetchHorseDetails(selectedHorseId, i18n.language)
         if (!isCancelled) {
           setHorseDetails(result)
         }
@@ -172,7 +172,7 @@ function App() {
     setErrorMessage('')
     setPipelineMessage('')
     try {
-      const data = await fetchRaceList()
+      const data = await fetchRaceList(i18n.language)
       setRaces(data)
       setSelectedTrack(data[0]?.trackName ?? '')
       setSelectedRaceId('')
@@ -207,7 +207,7 @@ function App() {
     setErrorMessage('')
     setPipelineMessage('')
     try {
-      const result = await fetchRaceHorses(raceId)
+      const result = await fetchRaceHorses(raceId, i18n.language)
       setRaceResult(result)
       const firstHorseId = result.horses[0]?.horseId ?? ''
       setSelectedHorseId(firstHorseId)
@@ -230,7 +230,7 @@ function App() {
     setLoadingLabel(t('raceList.pipelineRunning'))
     setErrorMessage('')
     try {
-      const result = await runPipeline({ raceLimit: 1, horsePerRaceLimit: 3 })
+      const result = await runPipeline({ raceLimit: 1, horsePerRaceLimit: 3, lang: i18n.language })
       setPipelineMessage(
         `Done. Races: ${result.races.length}, race results: ${Object.keys(result.raceResultByRaceId).length}, horse details: ${Object.keys(result.horseDetailsByHorseId).length}.`,
       )
