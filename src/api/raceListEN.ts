@@ -127,7 +127,7 @@ function extractRaceCardsFromTrackBlock(
       })
     })
 
-  return races
+  return races.reverse()
 }
 
 function parseRaceListHtmlEN(html: string, sourceUrl: string): Race[] {
