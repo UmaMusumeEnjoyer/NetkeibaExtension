@@ -1,4 +1,4 @@
-const DEFAULT_HEADERS: HeadersInit = {
+const DEFAULT_HEADERS: Record<string, string> = {
   'user-agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
   accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -86,11 +86,31 @@ function decodeHtmlBuffer(buffer: ArrayBuffer, contentType: string | null): stri
 
 function detectChallengePage(html: string): string | null {
   const lower = html.toLowerCase()
-  for (const marker of CHALLENGE_MARKERS) {
-    if (lower.includes(marker)) {
-      return marker
+  
+  // Only flag as challenge if we find clear markers of an anti-bot page
+  // Avoid false positives from race names or generic form elements
+  if (lower.includes('access denied') || lower.includes('forbidden')) {
+    return 'access-denied'
+  }
+  
+  // Look for actual CAPTCHA/challenge form patterns - must have both markers AND form elements
+  if ((/recaptcha|hcaptcha/i).test(html)) {
+    // Must also have form or data-sitekey attribute to be a real challenge
+    if (/<form|data-sitekey/i.test(html)) {
+      return 'challenge-form'
     }
   }
+  
+  // Check for Cloudflare Turnstile or similar challenge markers
+  if ((/<iframe[^>]*id=["']?cf_challenge["']?|class=["']?cf-challenge["']?/i).test(html)) {
+    return 'cloudflare-challenge'
+  }
+  
+  // Check for Japanese error message in error context only
+  if (lower.includes('異常') && /エラー|error|exception|invalid/i.test(html)) {
+    return 'error-marker'
+  }
+  
   return null
 }
 
@@ -104,7 +124,7 @@ export async function fetchHtml(url: string, delayMs = 0): Promise<string> {
   }
 
   // Use a copy of default headers and adjust referer for EN pages
-  const headers: HeadersInit = { ...DEFAULT_HEADERS }
+  const headers = { ...DEFAULT_HEADERS }
   try {
     const u = new URL(url)
     if (u.hostname === 'en.netkeiba.com') {
@@ -116,7 +136,7 @@ export async function fetchHtml(url: string, delayMs = 0): Promise<string> {
 
   const response = await fetch(url, {
     method: 'GET',
-    headers,
+    headers: headers as HeadersInit,
     credentials: 'include',
   })
 

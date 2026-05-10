@@ -231,11 +231,15 @@ export async function fetchHorseDetails(horseId: string): Promise<HorseDetails> 
   const resultUrl = buildHorseResultUrl(horseId)
   const pedUrl = buildHorsePedUrl(horseId)
 
-  const [mainHtml, resultHtml, pedHtml] = await Promise.all([
-    withRetry(() => fetchHtml(mainUrl, 160)),
-    withRetry(() => fetchHtml(resultUrl, 180)),
-    withRetry(() => fetchHtml(pedUrl, 200)),
-  ])
+  // Fetch sequentially with delays to avoid rate-limiting
+  // Main profile page first
+  const mainHtml = await withRetry(() => fetchHtml(mainUrl, 100))
+  
+  // Result page after short delay
+  const resultHtml = await withRetry(() => fetchHtml(resultUrl, 500))
+  
+  // Pedigree page last with longest delay
+  const pedHtml = await withRetry(() => fetchHtml(pedUrl, 800))
 
   const main$ = load(mainHtml)
   const result$ = load(resultHtml)

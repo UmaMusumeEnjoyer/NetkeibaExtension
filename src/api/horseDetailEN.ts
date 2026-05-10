@@ -18,14 +18,14 @@ function buildHorsePedUrlEN(horseId: string): string {
 }
 
 function extractHorseIdEN(url: string): string | undefined {
-  const match = url.match(/\/horse\/([0-9a-zA-Z]+)/);
+  const match = url.match(/\/horse\/([0-9a-zA-Z]{8,})(?:\/|$)/)
   if (match) {
-    const id = match[1];
+    const id = match[1]
     if (!['ped', 'sire', 'mare', 'result', 'board'].includes(id)) {
-      return id;
+      return id
     }
   }
-  return undefined;
+  return undefined
 }
 
 function normalizeText(value: string | undefined): string {
@@ -56,42 +56,39 @@ function findValueByHeader(
 }
 
 function parseRaceHistoryEN($: ReturnType<typeof load>): RaceHistoryRecord[] {
-  const rows = $('table tbody tr')
+  const rows = $('.table_slide_body tbody tr')
   const headerMap = buildHeaderMapEN($, rows)
+  const records: RaceHistoryRecord[] = []
 
-  return rows.map((_, row) => {
+  rows.each((_, row) => {
     const tdCells = $(row).find('td')
-    const cells = tdCells.map((__, cell) => normalizeText($(cell).text())).get()
+    if (tdCells.length === 0) return
 
-    // Trên bản EN, cột đầu tiên (Race) chứa: Date, Venue (TKY/HAN...), Race Number (11R), Race Name
+    const cells = tdCells.map((__, cell) => normalizeText($(cell).text())).get()
     const firstCellText = normalizeText(tdCells.eq(0).text())
-    
-    // Tách Date (VD: 21 Mar 2026)
+
     const dateMatch = firstCellText.match(/\d{1,2} [A-Z][a-z]{2} \d{4}/)
     const date = dateMatch ? dateMatch[0] : undefined
 
-    // Tách Venue (VD: CHU, TKY, HAN)
     const venueMatch = firstCellText.match(/[A-Z]{3}/)
     const venue = venueMatch ? venueMatch[0] : undefined
 
-    // Tách Race Number (VD: 11R)
     const raceNumMatch = firstCellText.match(/(\d+)R/)
     const raceNumber = raceNumMatch ? raceNumMatch[1] : undefined
 
-    // Tách Race Name (Lấy phần text còn lại sau khi bỏ Date/Venue/Num)
     let raceName = firstCellText
     if (date) raceName = raceName.replace(date, '')
     if (venue) raceName = raceName.replace(venue, '')
     if (raceNumMatch) raceName = raceName.replace(raceNumMatch[0], '')
     raceName = normalizeText(raceName)
 
-    return {
+    records.push({
       date,
       venue,
       raceNumber,
       raceName,
       weather: findValueByHeader(headerMap, cells, [/WX/i]),
-      raceClass: undefined, // Bản EN thường gộp vào Race Name
+      raceClass: undefined,
       horseNumber: findValueByHeader(headerMap, cells, [/Draw/i]),
       jockey: findValueByHeader(headerMap, cells, [/^J$/i, /Jockey/i]),
       carriedWeight: findValueByHeader(headerMap, cells, [/Wgt/i]),
@@ -107,12 +104,14 @@ function parseRaceHistoryEN($: ReturnType<typeof load>): RaceHistoryRecord[] {
       winnerOrTopHorse: findValueByHeader(headerMap, cells, [/Winner/i]),
       prize: findValueByHeader(headerMap, cells, [/Prize/i]),
       rawColumns: cells,
-    }
-  }).get().filter((row) => Boolean(row.date || row.raceName))
+    })
+  })
+
+  return records.filter((row) => Boolean(row.date || row.raceName))
 }
 
 function parsePedigreeEN($: ReturnType<typeof load>, horseId: string, horseName?: string): PedigreeNode[] {
-  const tableRows = $('.blood_table tr')
+  const tableRows = $('table[summary*="Pedigree"] tr, table.blood_table tr')
   if (tableRows.length === 0) return []
 
   const matrix: (PedigreeNode | null)[][] = Array.from({ length: 32 }, () => Array(5).fill(null))
@@ -162,13 +161,14 @@ function parsePedigreeEN($: ReturnType<typeof load>, horseId: string, horseName?
 
 function parseProfileEN($: ReturnType<typeof load>): Record<string, string> {
   const profile: Record<string, string> = {}
-  // Bản EN dùng cấu trúc text hoặc bảng .ProfTable
-  $('table tr').each((_, row) => {
+  const profileRows = $('#DetailTable tr, #DetailTable2 tr')
+
+  profileRows.each((_, row) => {
     const label = normalizeText($(row).find('th').first().text()).replace(/:$/, '')
     const value = normalizeText($(row).find('td').first().text())
     if (label && value) profile[label] = value
   })
-  // Fallback cho cấu trúc div nếu bảng không tồn tại
+
   if (Object.keys(profile).length === 0) {
     $('.HorseInfo, .data_intro').find('p, div').each((_, el) => {
       const text = normalizeText($(el).text())
@@ -186,11 +186,15 @@ export async function fetchHorseDetailsEN(horseId: string): Promise<HorseDetails
   const resultUrl = buildHorseResultUrlEN(horseId)
   const pedUrl = buildHorsePedUrlEN(horseId)
 
-  const [mainHtml, resultHtml, pedHtml] = await Promise.all([
-    withRetry(() => fetchHtml(mainUrl, 160)),
-    withRetry(() => fetchHtml(resultUrl, 180)),
-    withRetry(() => fetchHtml(pedUrl, 200)),
-  ])
+  // Fetch sequentially with delays to avoid rate-limiting
+  // Main profile page first
+  const mainHtml = await withRetry(() => fetchHtml(mainUrl, 100))
+  
+  // Result/form page after short delay
+  const resultHtml = await withRetry(() => fetchHtml(resultUrl, 500))
+  
+  // Pedigree page last with longest delay
+  const pedHtml = await withRetry(() => fetchHtml(pedUrl, 800))
 
   const main$ = load(mainHtml)
   const result$ = load(resultHtml)
