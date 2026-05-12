@@ -100,7 +100,7 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
   const jockeyName = runner?.jockey ?? 'C. Lemaire'
   const profileEntries = Object.entries(details?.profile ?? {})
   const raceHistory = details?.raceHistory ?? []
-  const pedigreeLevels = buildPedigreeLevels(details?.pedigree ?? [])
+  const pedigreeLevels = useMemo(() => buildPedigreeLevels(details?.pedigree ?? []), [details?.pedigree])
   const [activeTab, setActiveTab] = useState('history')
   const useVirtualization = raceHistory.length > VIRTUALIZE_THRESHOLD
   const virtualListData = useMemo(() => ({ raceHistory, t }), [raceHistory, t])
