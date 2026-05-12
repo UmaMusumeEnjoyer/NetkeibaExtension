@@ -4,7 +4,7 @@ import App from './App.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
 import '../i18n/i18n'
 
-console.log('Sidepanel starting...')
+if (import.meta.env.DEV) console.log('Sidepanel starting...')
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -14,4 +14,4 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 )
 
-console.log('Sidepanel rendered')
+if (import.meta.env.DEV) console.log('Sidepanel rendered')

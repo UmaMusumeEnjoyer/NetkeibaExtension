@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import './Dropdown.css'
 
 function normalizeOption(option) {
@@ -12,7 +13,7 @@ function normalizeOption(option) {
 }
 
 function Dropdown({ label, value, options, onChange, placeholder, disabled }) {
-  const normalizedOptions = options.map(normalizeOption)
+  const normalizedOptions = useMemo(() => options.map(normalizeOption), [options])
 
   const handleChange = (event) => {
     if (onChange) {
