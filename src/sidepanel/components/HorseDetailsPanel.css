@@ -263,6 +263,17 @@
   margin-top: 2px;
 }
 
+/* Virtualized history list (react-window) */
+.virtual-history-list {
+  border-radius: 0 0 12px 12px;
+}
+
+.virtual-history-row {
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
 .pedigree-view {
   padding-bottom: 4px;
 }

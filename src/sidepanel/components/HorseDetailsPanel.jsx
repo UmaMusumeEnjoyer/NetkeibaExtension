@@ -1,7 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { List as FixedSizeList } from 'react-window'
 
 import './HorseDetailsPanel.css'
+
+const VIRTUALIZE_THRESHOLD = 50
+const VIRTUAL_ROW_HEIGHT = 70
+const MAX_VIRTUAL_LIST_HEIGHT = 500
 
 function buildPedigreeLevels(pedigree = []) {
   if (!Array.isArray(pedigree) || pedigree.length === 0) {
@@ -68,6 +73,27 @@ function getFourthGenerationBranch(roleKey) {
   return ''
 }
 
+function VirtualHistoryRow({ index, style, data }) {
+  const { raceHistory, t } = data
+  const item = raceHistory[index]
+
+  return (
+    <div style={style}>
+      <div className="history-grid history-grid-row virtual-history-row">
+        <span className="history-date">{item.date ?? '-'}</span>
+        <div className="history-race">
+          <p>{item.raceName ?? '-'}</p>
+          <small>{`${item.venue ?? '-'} • ${item.weather ?? '-'} • ${item.goalTime ?? '-'}`}</small>
+        </div>
+        <span className="history-jockey">{item.jockey ?? '-'}</span>
+        <span className="history-distance">{item.distance ?? '-'}</span>
+        <span className="history-odds">{item.odds ?? '-'}</span>
+        <span className={`history-rank ${getRankClass(item.finishPosition)}`}>{item.finishPosition ?? '-'}</span>
+      </div>
+    </div>
+  )
+}
+
 function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, onClose }) {
   const { t } = useTranslation()
   const horseName = runner?.horse ?? 'Equinox'
@@ -76,6 +102,8 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
   const raceHistory = details?.raceHistory ?? []
   const pedigreeLevels = buildPedigreeLevels(details?.pedigree ?? [])
   const [activeTab, setActiveTab] = useState('history')
+  const useVirtualization = raceHistory.length > VIRTUALIZE_THRESHOLD
+  const virtualListData = useMemo(() => ({ raceHistory, t }), [raceHistory, t])
 
   useEffect(() => {
     if (isOpen) {
@@ -202,7 +230,20 @@ function HorseDetailsPanel({ isOpen, runner, details, isLoading, errorMessage, o
                 {isLoading && <p className="placeholder">{t('horseDetails.status.loading')}</p>}
                 {errorMessage && <p className="placeholder">{errorMessage}</p>}
 
-                {!isLoading && !errorMessage && raceHistory.map((item, index) => (
+                {!isLoading && !errorMessage && useVirtualization && (
+                  <FixedSizeList
+                    height={Math.min(raceHistory.length * VIRTUAL_ROW_HEIGHT, MAX_VIRTUAL_LIST_HEIGHT)}
+                    itemCount={raceHistory.length}
+                    itemSize={VIRTUAL_ROW_HEIGHT}
+                    width="100%"
+                    itemData={virtualListData}
+                    className="virtual-history-list"
+                  >
+                    {VirtualHistoryRow}
+                  </FixedSizeList>
+                )}
+
+                {!isLoading && !errorMessage && !useVirtualization && raceHistory.map((item, index) => (
                   <div key={`${item.date ?? 'date'}-${item.raceName ?? 'race'}-${index}`} className="history-grid history-grid-row">
                     <span className="history-date">{item.date ?? '-'}</span>
                     <div className="history-race">
